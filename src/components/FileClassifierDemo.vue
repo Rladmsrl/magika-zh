@@ -1,9 +1,10 @@
 <template>
   <v-card class="pt-4 pb-4 pl-4 pr-4 mx-auto" variant="outlined" color="primary">
     <v-card-text class="text-center pb-6">
-      <div class="text-h5 mb-3">文件类型检测</div>
+      <div class="text-h5 mb-3">智能文件重命名工具</div>
       <div class="text-body-1">
-        拖拽文件到下方区域或点击选择文件，AI将自动检测文件类型。
+        拖拽文件到下方区域或点击选择文件，AI将自动检测文件类型并重命名。
+        <br>仅支持图片和视频格式文件的重命名，其他格式将显示不支持。
         <br>文件处理完全在浏览器本地进行，不会上传到服务器。
       </div>
     </v-card-text>
@@ -38,9 +39,55 @@
     
     <v-alert v-if="message" type="info" :text="message" variant="tonal" class="mt-4 mb-3"></v-alert>
     
-    <div v-if="files && files.length > 0" class="mt-4">
-      <div class="text-h6 mb-3">检测结果：</div>
-      <bars-visualization v-for="(file, index) in files" :key="index" :file="file" :resultData="results[index]" />
+    <div v-if="processedFiles && processedFiles.length > 0" class="mt-4">
+      <div class="text-h6 mb-3">处理结果：</div>
+      <div v-for="(file, index) in processedFiles" :key="index" class="mb-2">
+        <v-card variant="outlined" class="pa-3">
+          <div class="d-flex justify-space-between align-center">
+            <div>
+              <div v-if="file.newName" class="text-subtitle-1">{{ file.newName }}</div>
+              <div v-else-if="file.unsupported" class="text-subtitle-1 text-error">{{ file.originalName }}</div>
+              <div v-else class="text-subtitle-1 text-error">{{ file.originalName }}</div>
+              
+              <div class="text-caption">{{ file.originalName }}</div>
+              <div v-if="file.unsupported" class="text-caption text-error">
+                不支持的文件格式: {{ file.detectedType }} (仅支持图片和视频格式)
+              </div>
+              <div v-else-if="file.error" class="text-caption text-error">
+                {{ file.error }}
+              </div>
+              <div v-else class="text-caption text-success">
+                检测为: {{ file.detectedType }}
+              </div>
+            </div>
+            <v-btn 
+              v-if="file.newName && file.data"
+              color="primary" 
+              variant="contained" 
+              size="small"
+              @click="downloadFile(file)"
+            >
+              下载
+            </v-btn>
+            <v-chip 
+              v-else-if="file.unsupported"
+              color="error"
+              size="small"
+              variant="outlined"
+            >
+              不支持
+            </v-chip>
+            <v-chip 
+              v-else-if="file.error"
+              color="error"
+              size="small"
+              variant="outlined"
+            >
+              错误
+            </v-chip>
+          </div>
+        </v-card>
+      </div>
     </div>
   </v-card>
 </template>
@@ -60,6 +107,41 @@ const results = ref([]);
 const message = ref();
 const isDragOver = ref(false);
 const fileInput = ref(null);
+const processedFiles = ref([]);
+
+// 支持的图片和视频格式扩展名映射
+const supportedExtensions = {
+  // 图片格式
+  'png': '.png',
+  'jpg': '.jpg',
+  'jpeg': '.jpeg',
+  'gif': '.gif',
+  'bmp': '.bmp',
+  'webp': '.webp',
+  'svg': '.svg',
+  'ico': '.ico',
+  'tiff': '.tiff',
+  'tif': '.tif',
+  'psd': '.psd',
+  'raw': '.raw',
+  'heic': '.heic',
+  'avif': '.avif',
+  // 视频格式
+  'mp4': '.mp4',
+  'avi': '.avi',
+  'mov': '.mov',
+  'wmv': '.wmv',
+  'flv': '.flv',
+  'webm': '.webm',
+  'mkv': '.mkv',
+  '3gp': '.3gp',
+  'mpg': '.mpg',
+  'mpeg': '.mpeg',
+  'ogv': '.ogv',
+  'ts': '.ts',
+  'm4v': '.m4v',
+  'asf': '.asf'
+};
 
 let magika = undefined;
 
@@ -93,9 +175,30 @@ const triggerFileInput = () => {
   fileInput.value?.$el?.querySelector('input')?.click();
 };
 
+// 下载文件函数
+const downloadFile = (processedFile) => {
+  const blob = new Blob([processedFile.data], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = processedFile.newName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+// 生成新文件名
+const generateNewFileName = (originalName, detectedType) => {
+  const baseName = originalName.split('.')[0] || 'unknown';
+  const extension = supportedExtensions[detectedType];
+  return extension ? `${baseName}${extension}` : null;
+};
+
 watch(files, async () => {
   if (!files.value || files.value.length === 0) {
     results.value = [];
+    processedFiles.value = [];
     return;
   }
 
@@ -113,41 +216,71 @@ watch(files, async () => {
   } catch (error) {
     console.error("Failed to load Magika model:", error);
     message.value = "模型加载失败，请刷新页面重试";
-    results.value = files.value.map(() => ({ topLabel: null, scores: null, error: "模型加载失败" }));
     return;
   }
 
-  results.value = new Array(files.value.length).fill(null);
+  processedFiles.value = [];
+  const newProcessedFiles = [];
 
-  const processingPromises = files.value.map(async (file, fileIndex) => {
+  const processingPromises = files.value.map(async (file) => {
     try {
       const fileBytes = new Uint8Array(await file.arrayBuffer());
       const magikaResult = await magika.identifyBytes(fileBytes);
 
       const prediction = magikaResult?.prediction;
       const topLabel = prediction?.output?.label ?? 'unknown';
-      const scoresMap = prediction?.scores_map ?? {};
-
-      results.value[fileIndex] = {
-        modelVersion: magika.getModelName(),
-        topLabel: topLabel,
-        scores: scoresMap
-      };
+      
+      // 检查是否是支持的格式
+      if (supportedExtensions[topLabel]) {
+        const newName = generateNewFileName(file.name, topLabel);
+        if (newName) {
+          newProcessedFiles.push({
+            originalName: file.name,
+            newName: newName,
+            data: fileBytes,
+            detectedType: topLabel
+          });
+        }
+      } else {
+        // 不支持的格式，添加到未处理列表
+        newProcessedFiles.push({
+          originalName: file.name,
+          newName: null,
+          data: null,
+          detectedType: topLabel,
+          unsupported: true
+        });
+      }
     } catch (error) {
       console.error(`Error processing file ${file.name}:`, error);
-      results.value[fileIndex] = {
-        topLabel: null,
-        scores: null,
+      newProcessedFiles.push({
+        originalName: file.name,
+        newName: null,
+        data: null,
         error: `处理失败: ${error.message}`
-      };
+      });
     }
   });
 
   await Promise.all(processingPromises);
-  message.value = "文件分析完成！";
+  processedFiles.value = newProcessedFiles;
+  
+  const supportedCount = newProcessedFiles.filter(f => !f.unsupported && !f.error).length;
+  const unsupportedCount = newProcessedFiles.filter(f => f.unsupported).length;
+  
+  if (supportedCount > 0 && unsupportedCount > 0) {
+    message.value = `处理完成！${supportedCount}个文件可下载，${unsupportedCount}个文件格式不支持`;
+  } else if (supportedCount > 0) {
+    message.value = `处理完成！${supportedCount}个文件可下载`;
+  } else if (unsupportedCount > 0) {
+    message.value = `检测完成，但所有文件格式都不支持（仅支持图片和视频格式）`;
+  } else {
+    message.value = "文件处理完成";
+  }
+  
   setTimeout(() => {
     message.value = null;
-  }, 3000);
+  }, 5000);
 });
 
 onMounted(async () => {
