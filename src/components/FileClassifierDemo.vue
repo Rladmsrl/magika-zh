@@ -1,16 +1,8 @@
 <template>
   <v-card class="pt-4 pb-4 pl-4 pr-4 mx-auto" variant="outlined" color="primary">
-    <v-card-text class="text-center pb-6">
-      <div class="text-h5 mb-3">智能文件重命名工具</div>
-      <div class="text-body-1">
-        拖拽文件到下方区域或点击选择文件，AI将自动检测文件类型并重命名。
-        <br>仅支持图片和视频格式文件的重命名，其他格式将显示不支持。
-        <br>文件处理完全在浏览器本地进行，不会上传到服务器。
-      </div>
-    </v-card-text>
-    
-    <div 
-      class="drop-zone" 
+
+    <div
+      class="drop-zone"
       :class="{ 'drag-over': isDragOver }"
       @drop.prevent="handleDrop"
       @dragover.prevent="handleDragOver"
@@ -18,17 +10,17 @@
       @dragleave.prevent="handleDragLeave"
       @click="triggerFileInput"
     >
-      <v-file-input 
-        v-model="files" 
-        variant="solo-filled" 
-        multiple 
-        show-size 
+      <v-file-input
+        v-model="files"
+        variant="solo-filled"
+        multiple
+        show-size
         counter
         label="拖拽文件到此处或点击选择文件"
         ref="fileInput"
         style="display: none;"
       />
-      
+
       <div class="drop-zone-content">
         <v-icon size="48" class="mb-3" color="primary">mdi-cloud-upload</v-icon>
         <div class="text-h6 mb-2">拖拽文件到此处</div>
@@ -36,9 +28,9 @@
         <div class="text-caption mt-2">支持多文件同时上传</div>
       </div>
     </div>
-    
+
     <v-alert v-if="message" type="info" :text="message" variant="tonal" class="mt-4 mb-3"></v-alert>
-    
+
     <div v-if="processedFiles && processedFiles.length > 0" class="mt-4">
       <div class="text-h6 mb-3">处理结果：</div>
       <div v-for="(file, index) in processedFiles" :key="index" class="mb-2">
@@ -48,7 +40,7 @@
               <div v-if="file.newName" class="text-subtitle-1">{{ file.newName }}</div>
               <div v-else-if="file.unsupported" class="text-subtitle-1 text-error">{{ file.originalName }}</div>
               <div v-else class="text-subtitle-1 text-error">{{ file.originalName }}</div>
-              
+
               <div class="text-caption">{{ file.originalName }}</div>
               <div v-if="file.unsupported" class="text-caption text-error">
                 不支持的文件格式: {{ file.detectedType }} (仅支持图片和视频格式)
@@ -60,16 +52,16 @@
                 检测为: {{ file.detectedType }}
               </div>
             </div>
-            <v-btn 
+            <v-btn
               v-if="file.newName && file.data"
-              color="primary" 
-              variant="contained" 
+              color="primary"
+              variant="contained"
               size="small"
               @click="downloadFile(file)"
             >
               下载
             </v-btn>
-            <v-chip 
+            <v-chip
               v-else-if="file.unsupported"
               color="error"
               size="small"
@@ -77,7 +69,7 @@
             >
               不支持
             </v-chip>
-            <v-chip 
+            <v-chip
               v-else-if="file.error"
               color="error"
               size="small"
@@ -164,7 +156,7 @@ const handleDragLeave = (e) => {
 const handleDrop = (e) => {
   e.preventDefault();
   isDragOver.value = false;
-  
+
   const droppedFiles = Array.from(e.dataTransfer.files);
   if (droppedFiles.length > 0) {
     files.value = droppedFiles;
@@ -229,7 +221,7 @@ watch(files, async () => {
 
       const prediction = magikaResult?.prediction;
       const topLabel = prediction?.output?.label ?? 'unknown';
-      
+
       // 检查是否是支持的格式
       if (supportedExtensions[topLabel]) {
         const newName = generateNewFileName(file.name, topLabel);
@@ -264,10 +256,10 @@ watch(files, async () => {
 
   await Promise.all(processingPromises);
   processedFiles.value = newProcessedFiles;
-  
+
   const supportedCount = newProcessedFiles.filter(f => !f.unsupported && !f.error).length;
   const unsupportedCount = newProcessedFiles.filter(f => f.unsupported).length;
-  
+
   if (supportedCount > 0 && unsupportedCount > 0) {
     message.value = `处理完成！${supportedCount}个文件可下载，${unsupportedCount}个文件格式不支持`;
   } else if (supportedCount > 0) {
@@ -277,7 +269,7 @@ watch(files, async () => {
   } else {
     message.value = "文件处理完成";
   }
-  
+
   setTimeout(() => {
     message.value = null;
   }, 5000);

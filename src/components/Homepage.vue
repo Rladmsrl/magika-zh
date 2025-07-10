@@ -1,10 +1,5 @@
 <template>
   <div class="text-center py-6">
-    <div class="text-h3 pb-3 text-primary">文件类型检测工具</div>
-    <div class="text-body-1 pb-6">
-      使用AI技术检测文件类型，支持200多种文件格式
-    </div>
-    
     <div v-if="isSupported === true" class="pa-4">
       <FileClassifierDemo />
     </div>
